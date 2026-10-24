@@ -1,394 +1,389 @@
 'use strict';
-const $ = i => document.getElementById(i), PI = Math.PI, TAU = 2 * PI;
-const mod = (a, m) => ((a % m) + m) % m, gcd = (x, y) => y ? gcd(y, x % y) : x;
-const fmt = (n, k = 2) => String(+(+n).toFixed(k)).replace('-', '−');
-const HUE = { sin: 210, cos: 140, tan: 25 };
-const dk = f => `hsl(${HUE[f]},80%,33%)`, lt = f => `hsl(${HUE[f]},55%,68%)`;
-const ID = { a: 1, b: 1, c: 0, d: 0 };
-const mkV = () => ({ xmin: -PI / 2, span: 5 * PI });
-const mk1 = () => ({ th: 0, snap: true });
-const mk2 = () => ({ fn: 'sin', th: 0, lo: 0, hi: 0, play: false, speed: 1, snap: true, hold: false, ...mkV() });
-const mk3 = () => ({ fn: 'sin', th: PI / 3, a: 1, b: 1, cn: 0, d: 0, showBase: true, showNew: true,
-  play: false, speed: 1, snap: true, xmin: -PI, span: 6 * PI });
-const S = { tab: 1, u: 'rad', t1: mk1(), t2: mk2(), t3: mk3() };
-let drag = 0;
+/* ===== 基本ユーティリティ ===== */
+const $ = id => document.getElementById(id);
+const rad = d => d * Math.PI / 180;
+const FN = { sin: '\\sin\\theta', cos: '\\cos\\theta', tan: '\\tan\\theta' };
+const OP = { '=': '=', '>=': '\\geqq', '>': '>', '<=': '\\leqq', '<': '<' };
+const SIDE = { '>=': '以上', '>': 'より大きい', '<=': '以下', '<': 'より小さい' };
+const COORD = { sin: '点のy座標', cos: '点のx座標', tan: '動径の傾き（直線 x=1 との交点のy座標）' };
 
-/* ---------- 分数・角度の表記 ---------- */
-const fr = (n, d) => `<span class="fr"><span>${n}</span><span>${d}</span></span>`;
-function angParts(n) { const v = Math.abs(n), g = gcd(v, 12); return { s: n < 0 ? '−' : '', p: v / g, q: 12 / g }; }
-function angHTML(n, unit) {                       // n は π/12 の整数倍
-  if ((unit || S.u) === 'deg') return fmt(n * 15, 0) + '°';
-  if (!n) return '0';
-  const { s, p, q } = angParts(n), top = (p === 1 ? '' : p) + 'π';
-  return s + (q === 1 ? top : fr(top, q));
+/* 数式表示（KaTeX。読み込めない場合は簡易表示） */
+function plain(s) {
+  return s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '($1)/($2)').replace(/\\sqrt\{([^{}]*)\}/g, '√$1')
+    .replace(/\\circ/g, '°').replace(/\\theta/g, 'θ').replace(/\\geqq/g, '≧').replace(/\\leqq/g, '≦')
+    .replace(/\\approx/g, '≒').replace(/\\(sin|cos|tan)/g, '$1').replace(/\\(quad|,|\\ )/g, ' ').replace(/[{}]/g, '');
 }
-const nearN = th => { const n = th / (PI / 12), r = Math.round(n); return Math.abs(n - r) < 1e-6 ? r : null; };
-function angAny(th, unit) {                       // 任意の角
-  const n = nearN(th); if (n !== null) return angHTML(n, unit);
-  return (unit || S.u) === 'deg' ? fmt(th * 180 / PI, 1) + '°' : fmt(th, 3) + ' rad';
-}
-const angBoth = th => angAny(th) + '（' + angAny(th, S.u === 'deg' ? 'rad' : 'deg') + '）';
-function cAng(ctx, n, x, y, fs, col) {            // canvas に教科書形式で描く
-  ctx.fillStyle = col || '#14213d'; ctx.font = fs + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  if (S.u === 'deg') ctx.fillText(fmt(n * 15, 0) + '°', x, y);
-  else if (!n) ctx.fillText('0', x, y);
-  else {
-    const { s, p, q } = angParts(n), top = (p === 1 ? '' : p) + 'π';
-    if (q === 1) ctx.fillText(s + top, x, y);
-    else {
-      const w = Math.max(ctx.measureText(top).width, ctx.measureText(String(q)).width) + 4;
-      const sw = s ? ctx.measureText(s).width + 3 : 0, x0 = x - (w + sw) / 2, fx = x0 + sw + w / 2;
-      if (s) ctx.fillText(s, x0 + sw / 2 - 1, y);
-      ctx.fillText(top, fx, y - fs * 0.55); ctx.fillText(String(q), fx, y + fs * 0.6);
-      ctx.beginPath(); ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 1.3; ctx.moveTo(fx - w / 2, y); ctx.lineTo(fx + w / 2, y); ctx.stroke();
-    }
-  }
-  ctx.textBaseline = 'alphabetic';
+function tex(s) {
+  if (window.katex) { try { return katex.renderToString(s, { throwOnError: false }); } catch (e) { /* fallthrough */ } }
+  return '<span>' + plain(s) + '</span>';
 }
 
-/* ---------- 有名角の厳密な値 ---------- */
-const RT = { 0: ['0', '1'], 2: ['1/2', '√3/2'], 3: ['√2/2', '√2/2'], 4: ['√3/2', '1/2'] };
-const TM = { '0|1': '0', '1/2|√3/2': '√3/3', '√2/2|√2/2': '1', '√3/2|1/2': '√3', '1|0': null };
-function exact(fn, n12) {
-  const n = mod(Math.round(n12), 24), q = Math.floor(n / 6), r = n % 6;
-  if (!RT[r]) return null;
-  const [sr, cr] = RT[r], sm = q % 2 ? cr : sr, cm = q % 2 ? sr : cr;
-  const ss = q < 2 ? '' : '−', cs = (q === 0 || q === 3) ? '' : '−';
-  if (fn === 'sin') return { s: ss, v: sm };
-  if (fn === 'cos') return { s: cs, v: cm };
-  const tv = TM[sm + '|' + cm]; if (tv === null) return { undef: true };
-  return { s: (ss === cs || tv === '0') ? '' : '−', v: tv };
-}
-function valHTML(e) {
-  if (!e) return ''; if (e.undef) return '定義されない';
-  const m = e.v.split('/'); return (e.v === '0' ? '' : e.s) + (m.length > 1 ? fr(m[0], m[1]) : m[0]);
-}
-const keyOf = e => e.undef ? 'undef' : (e.v === '0' ? '0' : e.s + e.v);
-const keyHTML = k => k === 'undef' ? '定義されない' : valHTML({ s: k[0] === '−' ? '−' : '', v: k.replace('−', '') });
-const snapAng = th => {
-  const n = th / (PI / 12), r = Math.round(n);
-  return ([0, 2, 3, 4].includes(mod(r, 24) % 6) && Math.abs(n - r) < 0.25) ? r * PI / 12 : th;
+/* ===== 値と問題 ===== */
+const BASE = {
+  '0': ['0', 0], '1/2': ['\\frac{1}{2}', .5], '√2/2': ['\\frac{\\sqrt{2}}{2}', Math.SQRT1_2],
+  '√3/2': ['\\frac{\\sqrt{3}}{2}', Math.sqrt(3) / 2], '1': ['1', 1],
+  '√3/3': ['\\frac{\\sqrt{3}}{3}', Math.sqrt(3) / 3], '√3': ['\\sqrt{3}', Math.sqrt(3)]
 };
-const F = (fn, x) => fn === 'sin' ? Math.sin(x) : fn === 'cos' ? Math.cos(x) : Math.tan(x);
-const Gf = (fn, p, x) => p.a * F(fn, p.b * (x - p.c)) + p.d;
-const P3 = s => ({ a: s.a, b: s.b, c: s.cn * PI / 12, d: s.d });
-const FN = f => S['t' + f];
-
-/* ---------- キャンバス ---------- */
-const G = {};
-['c1', 'c2c', 'c2g', 'c3c', 'c3g'].forEach(id => { G[id] = { cv: $(id), ctx: $(id).getContext('2d'), w: 0, h: 0, top: 0 }; });
-const circ = t => t === 1 ? G.c1 : G['c' + t + 'c'], grf = t => G['c' + t + 'g'];
-function layout() {
-  const d = window.devicePixelRatio || 1;
-  for (const k in G) {
-    const g = G[k], r = g.cv.getBoundingClientRect(); g.w = r.width; g.h = r.height; g.top = r.top;
-    if (r.width) { g.cv.width = Math.round(r.width * d); g.cv.height = Math.round(r.height * d); g.ctx.setTransform(d, 0, 0, d, 0, 0); }
-  }
-}
-const ro = new ResizeObserver(layout); for (const k in G) ro.observe(G[k].cv);
-const Rof = t => { const g = circ(t); return t === 1 ? Math.min(g.h / 3, g.w / 2.9) : Math.min(g.h / 2 / (t === 2 ? 1.6 : 4.2), g.w / 2.6); };
-const sideBy = t => Math.abs(circ(t).top - grf(t).top) < 2;
-const line = (ctx, x1, y1, x2, y2, col, w, dash) => {
-  ctx.beginPath(); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.setLineDash(dash || []);
-  ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
+function val(k) { const n = k[0] === '-', b = BASE[n ? k.slice(1) : k]; return { tex: (n ? '-' : '') + b[0], num: n ? -b[1] : b[1] }; }
+/* 関数 記号 値 下限 上限 難易度（0基本 1標準 2発展）。θの範囲は 下限≦θ＜上限 */
+const BANK = {
+  eq: ['sin = 1/2 0 360 0', 'cos = 1/2 0 360 0', 'sin = √3/2 0 360 0', 'cos = √2/2 0 360 0', 'tan = 1 0 360 0', 'tan = √3 0 360 0',
+    'sin = √2/2 0 360 0', 'cos = √3/2 0 360 0', 'tan = √3/3 0 360 0',
+    'sin = -1/2 0 360 1', 'cos = -1/2 0 360 1', 'sin = -√2/2 0 360 1', 'cos = -√3/2 0 360 1', 'tan = -1 0 360 1',
+    'tan = -√3 0 360 1', 'tan = -√3/3 0 360 1', 'sin = 0 0 360 1', 'cos = -1 0 360 1',
+    'sin = √2/2 -360 360 2', 'cos = 1/2 0 720 2', 'tan = 1 -180 360 2', 'sin = -√3/2 -360 360 2', 'cos = -√2/2 -360 360 2'],
+  in: ['sin >= 1/2 0 360 0', 'sin > 1/2 0 360 0', 'cos < 1/2 0 360 0', 'sin <= √3/2 0 360 0', 'cos > √2/2 0 360 0',
+    'tan > 1 0 360 0', 'tan <= √3 0 360 0', 'cos >= √3/2 0 360 0', 'sin < √2/2 0 360 0',
+    'sin >= -1/2 0 360 1', 'cos < -1/2 0 360 1', 'sin <= -√2/2 0 360 1', 'cos > -√3/2 0 360 1', 'tan > -1 0 360 1',
+    'tan <= -√3/3 0 360 1', 'cos <= 0 0 360 1',
+    'sin >= √2/2 -360 360 2', 'cos < 1/2 0 720 2', 'tan > -√3 -180 360 2', 'sin < -1/2 -360 360 2']
 };
-const clamp = v => Math.max(-1e4, Math.min(1e4, v));
-
-/* ---------- 単位円 ---------- */
-function drawCircle(t, fn, th, o) {
-  const g = circ(t); if (!g.w) return;
-  const { ctx, w, h } = g, R = Rof(t), cx = w / 2, cy = h / 2;
-  ctx.clearRect(0, 0, w, h);
-  line(ctx, 0, cy, w, cy, '#8a93a6', 1.5); line(ctx, cx, 0, cx, h, '#8a93a6', 1.5);
-  ctx.beginPath(); ctx.strokeStyle = '#14213d'; ctx.lineWidth = 2.5; ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
-  if (o.labels) for (const n of FAM) {
-    const a = n * PI / 12; ctx.beginPath(); ctx.fillStyle = '#14213d'; ctx.arc(cx + R * Math.cos(a), cy - R * Math.sin(a), 3, 0, TAU); ctx.fill();
-    if (n < 24) cAng(ctx, n, cx + 1.24 * R * Math.cos(a), cy - 1.24 * R * Math.sin(a), 13, '#444');
-  }
-  const co = Math.cos(th), si = Math.sin(th), px = cx + R * co, py = cy - R * si, tm = mod(th, TAU);
-  ctx.beginPath(); ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 3; ctx.arc(cx, cy, R * 0.28, 0, -tm, true); ctx.stroke();
-  let lvl = null, sx0 = 0, sy0 = 0;
-  for (const f of (fn === 'all' ? ['sin', 'cos', 'tan'] : [fn])) {
-    const col = dk(f);
-    if (f === 'sin') { line(ctx, px, cy, px, py, col, 5); lvl = py; sx0 = px; sy0 = py; }
-    else if (f === 'cos') {
-      line(ctx, cx, cy, px, cy, col, 5);
-      if (fn !== 'all') {
-        lvl = cy - R * co; sx0 = cx; sy0 = lvl; line(ctx, px, cy, cx, lvl, col, 1.5, [5, 5]);
-        ctx.beginPath(); ctx.fillStyle = col; ctx.arc(cx, lvl, 6, 0, TAU); ctx.fill();
-      }
-    } else {
-      const ty = cy - R * clamp(Math.tan(th));
-      line(ctx, cx + R, 0, cx + R, h, '#8a93a6', 1.5, [4, 4]);
-      line(ctx, cx, cy, cx + R, ty, '#14213d', 1.5, [6, 5]); line(ctx, cx + R, cy, cx + R, ty, col, 5);
-      if (fn !== 'all') { lvl = ty; sx0 = cx + R; sy0 = ty; }
-    }
-  }
-  line(ctx, cx, cy, px, py, '#14213d', 2.5);
-  if (o.link && sideBy(t) && lvl !== null && lvl > 0 && lvl < h) line(ctx, sx0, sy0, w, lvl, dk(fn), 1.5, [6, 5]);
-  ctx.beginPath(); ctx.fillStyle = '#d62839'; ctx.arc(px, py, 10, 0, TAU); ctx.fill();
-  ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
-  ctx.fillStyle = '#c0392b'; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left'; ctx.fillText('θ', cx + R * 0.33, cy - 6);
-  ctx.fillStyle = '#14213d'; ctx.font = '14px sans-serif'; ctx.fillText('x', w - 14, cy - 6); ctx.fillText('y', cx + 8, 16);
+function parse(s) { const [f, op, k, lo, hi, lv] = s.split(' '); return { f, op, k, v: val(k), lo: +lo, hi: +hi, lv: +lv }; }
+function pick(tab, lv, except) {
+  const list = BANK[tab].map(parse).filter(p => p.lv === lv && !(except && p.f === except.f && p.op === except.op && p.k === except.k && p.lo === except.lo && p.hi === except.hi));
+  return list[Math.floor(Math.random() * list.length)];
 }
 
-/* ---------- グラフ ---------- */
-function curve(ctx, fn, p, g, s, col, wd, dash, x0, x1) {
-  const sx = g.w / s.span, tan = fn === 'tan'; let pk = null, pen = false;
-  ctx.beginPath(); ctx.strokeStyle = col; ctx.lineWidth = wd; ctx.setLineDash(dash || []); ctx.lineJoin = 'round';
-  for (let px = 0; px <= g.w; px++) {
-    const x = s.xmin + px / sx; if (x < x0 || x > x1) { pen = false; pk = null; continue; }
-    const k = tan ? Math.floor((p.b * (x - p.c) + PI / 2) / PI) : 0, y = g.h / 2 - Rof(g.t) * Gf(fn, p, x);
-    if (!isFinite(y) || Math.abs(y - g.h / 2) > 1e4) { pen = false; pk = k; continue; }
-    if (tan && k !== pk) pen = false;
-    pk = k; if (!pen) { ctx.moveTo(px, y); pen = true; } else ctx.lineTo(px, y);
-  }
-  ctx.stroke(); ctx.setLineDash([]);
+/* ===== 数学計算（角度は整数度で厳密に判定） ===== */
+function fval(f, d) {
+  const r = rad(d);
+  if (f === 'sin') return Math.sin(r);
+  if (f === 'cos') return Math.cos(r);
+  return Math.abs(Math.cos(r)) < 1e-9 ? NaN : Math.tan(r);
 }
-function asym(ctx, p, g, s, col, x0, x1) {
-  const sx = g.w / s.span, a = Math.max(s.xmin, x0), b = Math.min(s.xmin + s.span, x1);
-  const f1 = p.b * (a - p.c), f2 = p.b * (b - p.c), lo = Math.min(f1, f2), hi = Math.max(f1, f2);
-  for (let k = Math.ceil((lo - PI / 2) / PI); k <= Math.floor((hi - PI / 2) / PI); k++) {
-    const x = (p.c + (PI / 2 + k * PI) / p.b - s.xmin) * sx; line(ctx, x, 0, x, g.h, col, 1.8, [2, 5]);
+function sat(p, d) {
+  const y = fval(p.f, d), v = p.v.num, e = 1e-9;
+  if (isNaN(y)) return false;
+  switch (p.op) {
+    case '=': return Math.abs(y - v) < e;
+    case '>=': return y >= v - e;
+    case '>': return y > v + e;
+    case '<=': return y <= v + e;
+    default: return y < v - e;
   }
 }
-function periodArrow(ctx, fn, p, g, s, X, Y) {
-  const per = (fn === 'tan' ? PI : TAU) / Math.abs(p.b);
-  let x0 = fn === 'sin' ? p.c + (p.a >= 0 ? PI / 2 : 3 * PI / 2) / p.b : fn === 'cos' ? p.c + (p.a >= 0 ? 0 : PI) / p.b : p.c;
-  x0 += Math.ceil((s.xmin + 0.12 * s.span - x0) / per) * per;
-  const yv = fn === 'tan' ? p.d : Math.abs(p.a) + p.d, xa = X(x0), xb = X(x0 + per);
-  if (xb > g.w) return;
-  const y = Math.max(Y(yv) - (fn === 'tan' ? 0 : 28), 46), col = '#7a1fa2';
-  for (const x of [xa, xb]) { line(g.ctx, x, Y(yv), x, y + 6, col, 1.5, [3, 3]); g.ctx.beginPath(); g.ctx.fillStyle = col; g.ctx.arc(x, Y(yv), 5, 0, TAU); g.ctx.fill(); }
-  line(ctx, xa, y, xb, y, col, 2.5);
-  for (const [x, d] of [[xa, 1], [xb, -1]]) { ctx.beginPath(); ctx.fillStyle = col; ctx.moveTo(x, y); ctx.lineTo(x + d * 11, y - 6); ctx.lineTo(x + d * 11, y + 6); ctx.fill(); }
-  ctx.fillStyle = col; ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('周期', (xa + xb) / 2 - 36, y - 10);
-  const n = per / (PI / 12);
-  if (Math.abs(n - Math.round(n)) < 1e-6) cAng(ctx, Math.round(n), (xa + xb) / 2 + 12, y - 16, 15, col);
-  else { ctx.fillStyle = col; ctx.fillText(fmt(per / PI, 2) + 'π', (xa + xb) / 2 + 20, y - 10); ctx.textBaseline = 'alphabetic'; }
+function eqSol(p) { const q = { ...p, op: '=' }, s = []; for (let d = p.lo; d < p.hi; d++) if (sat(q, d)) s.push(d); return s; }
+function ineqSol(p) {
+  const pts = [p.lo], q = { ...p, op: '=' };
+  for (let d = p.lo + 1; d < p.hi; d++) if (isNaN(fval(p.f, d)) || sat(q, d)) pts.push(d);
+  pts.push(p.hi);
+  const out = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    if (!sat(p, (a + b) / 2)) continue;
+    const last = out[out.length - 1];
+    if (last && last.hi === a && sat(p, a)) last.hi = b; else out.push({ lo: a, hi: b });
+  }
+  out.forEach(u => { u.li = sat(p, u.lo); u.hiI = u.hi === p.hi ? false : sat(p, u.hi); });
+  return out;
 }
-function drawGraph(t) {
-  const s = FN(t), g = grf(t); if (!g.w) return; g.t = t;
-  const { ctx, w, h } = g, R = Rof(t), sx = w / s.span, cy = h / 2, fn = s.fn;
-  const X = x => (x - s.xmin) * sx, Y = v => cy - R * v;
-  ctx.clearRect(0, 0, w, h);
-  const steps = [3, 6, 12, 24, 48, 96, 192]; let st = 3; for (const c of steps) { st = c; if (sx * st * PI / 12 >= 78) break; }
-  const u = st * PI / 12;
-  for (let i = Math.ceil(s.xmin / u); i * u <= s.xmin + s.span; i++) {
-    const x = X(i * u); line(ctx, x, 0, x, h, i ? '#e1e5ee' : '#14213d', i ? 1 : 2.5);
-    if (i) cAng(ctx, i * st, x, cy + 30, 16);
-  }
-  ctx.font = '16px sans-serif'; ctx.textAlign = 'left';
-  for (let v = -Math.floor(cy / R); v <= Math.floor(cy / R); v++) {
-    line(ctx, 0, Y(v), w, Y(v), v ? '#e1e5ee' : '#14213d', v ? 1 : 2.5);
-    if (v) { ctx.fillStyle = '#14213d'; ctx.fillText(fmt(v, 0), 6, Y(v) - 4); }
-  }
-  const p = t === 2 ? ID : P3(s), x0 = t === 2 ? s.lo : -Infinity, x1 = t === 2 ? s.hi : Infinity;
-  const showNew = t === 2 || s.showNew, showBase = t === 3 && s.showBase;
-  if (fn === 'tan') {
-    if (showBase) asym(ctx, ID, g, s, lt(fn), x0, x1);
-    if (showNew && x1 > x0) asym(ctx, p, g, s, dk(fn), x0, x1);
-  }
-  if (showBase) curve(ctx, fn, ID, g, s, lt(fn), 4, [10, 7], x0, x1);
-  if (showNew && x1 > x0) curve(ctx, fn, p, g, s, dk(fn), 4.5, null, x0, x1);
-  if (t === 3 && showNew) periodArrow(ctx, fn, p, g, s, X, Y);
-  const th = s.th, tx = X(th), idv = Y(clamp(F(fn, th))), ty = Y(clamp(Gf(fn, p, th)));
-  if (sideBy(t) && idv > 0 && idv < h) line(ctx, 0, idv, Math.min(Math.max(tx, 0), w), idv, dk(fn), 1.5, [6, 5]);
-  if (tx >= 0 && tx <= w) {
-    if (showNew) line(ctx, tx, cy, tx, ty, dk(fn), 1.5, [4, 4]);
-    if (t === 3) {
-      ctx.beginPath(); ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 2; ctx.arc(tx, idv, 6, 0, TAU); ctx.stroke();
-      if (showBase) { ctx.beginPath(); ctx.strokeStyle = lt(fn); ctx.lineWidth = 3; ctx.arc(tx, Y(clamp(F(fn, th))), 9, 0, TAU); ctx.stroke(); }
-    }
-    if (showNew) { ctx.beginPath(); ctx.fillStyle = dk(fn); ctx.arc(tx, ty, 9, 0, TAU); ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke(); }
-  }
-  const rows = t === 3 ? [['変化前（薄い・破線）', lt(fn), [10, 7], 4, showBase], ['変化後（濃い・実線）', dk(fn), [], 4.5, showNew]].filter(r => r[4])
-    : [['y = ' + fn + ' θ（動かした範囲）', dk(fn), [], 4.5]];
-  ctx.font = 'bold 16px sans-serif'; ctx.textAlign = 'left';
-  const lw = Math.max(0, ...rows.map(r => ctx.measureText(r[0]).width)) + 56;
-  if (rows.length) {
-    ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.fillRect(w - lw - 10, 8, lw, rows.length * 26 + 8);
-    rows.forEach((r, i) => { const y = 28 + i * 26; line(ctx, w - lw - 2, y - 5, w - lw + 32, y - 5, r[1], r[3], r[2]); ctx.fillStyle = '#14213d'; ctx.fillText(r[0], w - lw + 40, y); });
-  }
+/* 有名角の正確な値（TeX）。有名角でなければ null、tanの定義なしは 'undef' */
+const SM = { 0: '0', 30: '\\frac{1}{2}', 45: '\\frac{\\sqrt{2}}{2}', 60: '\\frac{\\sqrt{3}}{2}', 90: '1' };
+const TM = { 0: '0', 30: '\\frac{\\sqrt{3}}{3}', 45: '1', 60: '\\sqrt{3}' };
+function exact(f, deg) {
+  if (Math.abs(deg - Math.round(deg)) > 1e-6) return null;
+  const d = ((Math.round(deg) % 360) + 360) % 360;
+  if (d % 30 && d % 45) return null;
+  const r = d <= 90 ? d : d <= 180 ? 180 - d : d <= 270 ? d - 180 : 360 - d;
+  let mag, neg;
+  if (f === 'sin') { mag = SM[r]; neg = d > 180; }
+  else if (f === 'cos') { mag = SM[90 - r]; neg = d > 90 && d < 270; }
+  else { if (d === 90 || d === 270) return 'undef'; mag = TM[r]; neg = (d > 90 && d < 180) || d > 270; }
+  return neg && mag !== '0' ? '-' + mag : mag;
+}
+const fmt = a => Math.abs(a - Math.round(a)) < 0.05 ? String(Math.round(a)) : a.toFixed(1);
+function rowHtml(f, a) {
+  const lhs = `\\${f}\\,${fmt(a)}^\\circ`, e = exact(f, a);
+  if (e === 'undef') return `<div class="vrow">${tex(lhs)} <span class="undef">は定義されない</span></div>`;
+  if (e !== null) return `<div class="vrow">${tex(lhs + '=' + e)}</div>`;
+  const y = fval(f, a);
+  return `<div class="vrow">${tex(lhs + '\\approx ' + y.toFixed(3))} <small>（近似値）</small></div>`;
+}
+const rangeTex = p => `${p.lo}^\\circ\\leqq\\theta<${p.hi}^\\circ`;
+const ivTex = u => `${u.lo}^\\circ${u.li ? '\\leqq' : '<'}\\theta${u.hiI ? '\\leqq' : '<'}${u.hi}^\\circ`;
+const probTex = p => `${FN[p.f]}${OP[p.op]}${p.v.tex}`;
+
+/* ===== 状態 ===== */
+const S = { tab: 'eq', lv: 0, snap: true, st: {} };
+function newState(tab, except) { return { p: pick(tab, S.lv, except), angle: 0, reg: [], ranges: [], checks: 0, mode: 'explore', locked: true, pred: '', done: false, hint: 0 }; }
+const c = () => S.st[S.tab];
+function msg(html, type) {
+  const m = $('msg'), icon = { ok: '✔ ', bad: '✖ ', info: 'ℹ ' }[type] || '';
+  m.className = 'msg ' + (type || ''); m.innerHTML = html ? icon + html : '';
 }
 
-/* ---------- 情報表示 ---------- */
-const cache = {};
-const put = (id, h) => { if (cache[id] !== h) { $(id).innerHTML = h; cache[id] = h; } };
-function trigVals(th, fns) {
-  const n = nearN(th), co = Math.cos(th), si = Math.sin(th), un = Math.abs(co) < 1e-9;
-  const val = f => {
-    const e = n !== null ? exact(f, n) : null; if (e) return valHTML(e);
-    if (f === 'tan' && un) return '定義されない'; return fmt(F(f, th), 3);
-  };
-  const P = n !== null && exact('sin', n) ? `P(<b>${valHTML(exact('cos', n))}</b>, <b>${valHTML(exact('sin', n))}</b>)` : `P(<b>${fmt(co, 3)}</b>, <b>${fmt(si, 3)}</b>)`;
-  return `<span>θ = <b>${angBoth(th)}</b></span><span>点 ${P}</span>` + fns.map(f => `<span>${f} θ = <b>${val(f)}</b></span>`).join('');
-}
-function formulaH(fn, a, b, cn, d) {
-  const A = a === 1 ? '' : a === -1 ? '−' : fmt(a), B = b === 1 ? '' : b === -1 ? '−' : fmt(b);
-  const inner = cn ? (B ? B + '(' : '') + 'θ ' + (cn > 0 ? '−' : '+') + ' ' + angHTML(Math.abs(cn)) + (B ? ')' : '') : (B + 'θ');
-  const D = d > 0 ? ' + ' + fmt(d) : d < 0 ? ' − ' + fmt(-d) : '';
-  return 'y = ' + A + fn + (inner === 'θ' ? ' θ' : '(' + inner + ')') + D;
-}
-function perHTML(fn, b) {
-  if (S.u === 'deg') return fmt((fn === 'tan' ? 180 : 360) / Math.abs(b), 1) + '°';
-  const bn = Math.round(Math.abs(b) * 4), num = fn === 'tan' ? 4 : 8, g = gcd(num, bn), p = num / g, q = bn / g, top = (p === 1 ? '' : p) + 'π';
-  return q === 1 ? top : fr(top, q);
-}
-function drawInfo() {
-  if (S.tab === 1) put('i1', trigVals(S.t1.th, ['sin', 'cos', 'tan']));
-  else if (S.tab === 2) put('i2', trigVals(S.t2.th, [S.t2.fn]));
-  else {
-    const s = S.t3, p = P3(s), fn = s.fn, th = s.th;
-    const per = fn === 'tan' ? 'π' : '2π', gv = Gf(fn, p, th);
-    const gs = fn === 'tan' && Math.abs(Math.cos(s.b * (th - p.c))) < 1e-9 ? '定義されない' : fmt(gv, 3);
-    put('i3', `<div class="f">変化前　${formulaH(fn, 1, 1, 0, 0)}　→　変化後　${formulaH(fn, s.a, s.b, s.cn, s.d)}</div>`
-      + `<span>周期：<b>${perHTML(fn, 1)}</b> → <b>${perHTML(fn, s.b)}</b></span>`
-      + `<span>θ = <b>${angBoth(th)}</b></span><span>変化前 y = <b>${fn === 'tan' && Math.abs(Math.cos(th)) < 1e-9 ? '定義されない' : fmt(F(fn, th), 3)}</b></span><span>変化後 y = <b>${gs}</b></span>`);
+/* ===== ヒントと解説 ===== */
+function hints(st) {
+  const p = st.p, v = tex(p.v.tex), fn = tex(FN[p.f]);
+  if (S.tab === 'eq') {
+    const sym = { sin: 'y軸について対称な位置にも同じ y 座標の点があります。', cos: 'x軸について対称な位置にも同じ x 座標の点があります。', tan: '動径を反対側へのばした直線上の点でも、tan の値は同じです（180°ずつ離れた角）。' }[p.f];
+    return [
+      `注目するのは ${fn} の値です。単位円では ${COORD[p.f]}に対応します。`,
+      `30°・45°・60°・90° などの特殊角で、sin・cos・tan の値がいくつだったか思い出そう。まず ${tex(probTex(p))} になる角度を1つ見つけよう。`,
+      `${sym}範囲 ${tex(rangeTex(p))} の中で、動径を一周させて探そう。`
+    ];
   }
+  const inc = p.op === '>=' || p.op === '<=';
+  return [
+    `注目するのは ${fn} の値です。単位円では ${COORD[p.f]}に対応します。`,
+    `まず等号のとき（${tex(FN[p.f] + '=' + p.v.tex)}）になる角度、つまり範囲の境界を探そう。`,
+    `単位円上で、${COORD[p.f]}が ${v} ${SIDE[p.op]}となる動径の範囲を探そう。`,
+    `${tex('\\geqq')}・${tex('\\leqq')} は境界を含む（●）、${tex('>')}・${tex('<')} は含まない（○）。この問題は ${tex(OP[p.op])} なので、境界は${inc ? '含みます' : '含みません'}。`
+  ];
 }
-function outs3() {
-  const s = S.t3, fn = s.fn, c = s.cn;
-  $('la').innerHTML = (fn === 'tan' ? '縦の倍率 a：' : '振幅 a：') + '1 → ' + fmt(s.a);
-  $('ha').textContent = fn === 'tan' ? 'tan に振幅はなく、縦方向の倍率になる。負なら上下反転。' : '|a| が大きいほど山が高く谷が深い。負なら上下反転。';
-  $('lb').innerHTML = '周期（b = ' + fmt(s.b) + '）：' + perHTML(fn, 1) + ' → ' + perHTML(fn, s.b);
-  $('lc').innerHTML = c > 0 ? '右へ移動：' + angHTML(c) : c < 0 ? '左へ移動：' + angHTML(-c) : '横の移動なし';
-  $('ld').innerHTML = s.d > 0 ? '上へ移動：' + fmt(s.d) : s.d < 0 ? '下へ移動：' + fmt(-s.d) : '縦の移動なし';
-}
-
-/* ---------- 復習の問題 ---------- */
-const FAM = [0, 2, 3, 4, 6, 8, 9, 10, 12, 14, 15, 16, 18, 20, 21, 22, 24];
-const POOL = []; for (let n = -30; n <= 48; n++) if ([0, 2, 3, 4].includes(mod(n, 24) % 6)) POOL.push(n);
-const CS = ['0', '1/2', '√2/2', '√3/2', '1', '−1/2', '−√2/2', '−√3/2', '−1'];
-const CT = ['0', '√3/3', '1', '√3', '−√3/3', '−1', '−√3', 'undef'];
-const rnd = a => a[Math.floor(Math.random() * a.length)];
-const Q = { cur: null, sel: null, state: 0 };
-function newQ() {
-  const type = rnd(['sin', 'cos', 'tan', 'quad', 'sin', 'cos', 'tan']);
-  if (type === 'quad') {
-    const sp = rnd([1, -1]), cp = rnd([1, -1]);
-    Q.cur = { type, sp, cp, ans: String(sp > 0 ? (cp > 0 ? 1 : 2) : (cp > 0 ? 4 : 3)), choices: ['1', '2', '3', '4'] };
-  } else { const n = rnd(POOL); Q.cur = { type, n, ans: keyOf(exact(type, n)), choices: type === 'tan' ? CT : CS }; }
-  Q.sel = null; Q.state = 0; renderQ();
-}
-function renderQ() {
-  const q = Q.cur;
-  put('qq', q.type === 'quad' ? `sin θ が${q.sp > 0 ? '正' : '負'}、cos θ が${q.cp > 0 ? '正' : '負'}となる象限を答えよ。`
-    : `${q.type}(${angHTML(q.n, 'rad')}) を求めよ。`);
-  put('qc', q.choices.map(k => `<button data-act="choose" data-k="${k}" class="${Q.sel === k ? 'sel' : ''}">${q.type === 'quad' ? '第' + k + '象限' : keyHTML(k)}</button>`).join(''));
-  let r = '';
-  if (Q.state === 1) r = Q.sel === null ? '答えを選んでから押してね。' : Q.sel === q.ans ? '<span class="ok">正解です！</span>' : '<span class="ng">おしい。単位円を動かして、もう一度考えてみよう。</span>';
-  if (Q.state === 2) r = explain();
-  put('qr', r);
-}
-function explain() {
-  const q = Q.cur;
-  if (q.type === 'quad') return `答え：<b>第${q.ans}象限</b><br>sin θ は y 座標、cos θ は x 座標。y ${q.sp > 0 ? '＞' : '＜'} 0（${q.sp > 0 ? '上' : '下'}半分）かつ x ${q.cp > 0 ? '＞' : '＜'} 0（${q.cp > 0 ? '右' : '左'}半分）の領域が第${q.ans}象限。`;
-  const e = f => valHTML(exact(f, q.n)), ans = keyHTML(q.ans);
-  const how = q.type === 'sin' ? `sin θ は y 座標なので ${e('sin')}` : q.type === 'cos' ? `cos θ は x 座標なので ${e('cos')}`
-    : `tan θ = y/x = ${e('sin')} ÷ ${e('cos')}` + (exact('tan', q.n).undef ? '（x = 0 なので定義されない）' : ` = ${ans}`);
-  return `答え：<b>${ans}</b><br>θ = ${angHTML(q.n, 'rad')} の動径と単位円の交点は P(${e('cos')}, ${e('sin')})。${how}。`
-    + (q.n < 0 || q.n >= 24 ? `<br>動径の位置は ${angHTML(mod(q.n, 24), 'rad')} と同じ（2π の整数倍の差）。` : '');
-}
-
-/* ---------- 操作 ---------- */
-function touch(s) { if (!s.hold) { s.lo = Math.min(s.lo, s.th); s.hi = Math.max(s.hi, s.th); } }
-function follow(s) {
-  if (s.xmin === undefined) return;
-  const lo = s.xmin + 0.05 * s.span, hi = s.xmin + 0.95 * s.span;
-  if (s.th > hi) s.xmin += s.th - hi; else if (s.th < lo) s.xmin -= lo - s.th;
-}
-function moved(t) { const s = FN(t); if (t === 2) touch(s); follow(s); }
-function zoom(s, f, cx = 0.5) { const ns = Math.min(40 * PI, Math.max(PI / 2, s.span * f)), at = s.xmin + cx * s.span; s.xmin = at - cx * ns; s.span = ns; }
-const bar = t => `<div class="grp">${['sin', 'cos', 'tan'].map(f => `<button data-act="fn" data-t="${t}" data-v="${f}">${f}</button>`).join('')}</div>
-<button data-act="play" data-t="${t}" id="pl${t}">▶ 再生</button>
-<button data-act="back" data-t="${t}">◀ 少し戻す</button><button data-act="fwd" data-t="${t}">少し進める ▶</button>
-<label>速さ <select data-act="speed" data-t="${t}">${[0.25, 0.5, 1, 2, 4].map(v => `<option value="${v}"${v === 1 ? ' selected' : ''}>×${v}</option>`).join('')}</select></label>
-<label class="chk"><input type="checkbox" data-act="snap" data-t="${t}" checked>有名角にスナップ</label>
-${t === 2 ? '<label class="chk"><input type="checkbox" data-act="hold" data-t="2">描画を一時停止</label>'
-    : '<label class="chk"><input type="checkbox" data-act="showBase" data-t="3" checked>変化前を表示</label><label class="chk"><input type="checkbox" data-act="showNew" data-t="3" checked>変化後を表示</label>'}
-<button data-act="zo" data-t="${t}">− 縮小</button><button data-act="zi" data-t="${t}">＋ 拡大</button><button data-act="zv" data-t="${t}">表示を戻す</button>
-<button data-act="reset" data-t="${t}">リセット</button>`;
-document.querySelectorAll('[data-bar]').forEach(el => { el.innerHTML = bar(el.dataset.bar); });
-
-function sync() {
-  document.querySelectorAll('[data-act=tab]').forEach(b => b.classList.toggle('on', +b.dataset.t === S.tab));
-  document.querySelectorAll('[data-act=unit]').forEach(b => b.classList.toggle('on', b.dataset.v === S.u));
-  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p' + S.tab));
-  document.querySelectorAll('[data-act=fn]').forEach(b => b.classList.toggle('on', FN(b.dataset.t).fn === b.dataset.v));
-  [2, 3].forEach(t => { $('pl' + t).textContent = FN(t).play ? '⏸ 一時停止' : '▶ 再生'; });
-  put('fam', FAM.map(n => `<button data-act="famous" data-n="${n}">${angHTML(n)}</button>`).join('')
-    + '<button data-act="shift" data-v="1">＋2π</button><button data-act="shift" data-v="-1">−2π</button><button data-act="neg">符号反転</button>');
-  $('sa').value = S.t3.a; $('sb').value = S.t3.b; $('sc').value = S.t3.cn; $('sd').value = S.t3.d;
-  outs3(); renderQ(); cache.i1 = cache.i2 = cache.i3 = null; setTimeout(layout, 0);
-}
-function act(a, t, el) {
-  const s = t ? FN(t) : null;
-  switch (a) {
-    case 'tab': S.tab = t; break;
-    case 'unit': S.u = el.dataset.v; break;
-    case 'fn': s.fn = el.dataset.v; break;
-    case 'play': s.play = !s.play; break;
-    case 'back': s.th -= PI / 12; moved(t); break;
-    case 'fwd': s.th += PI / 12; moved(t); break;
-    case 'speed': s.speed = +el.value; break;
-    case 'snap': case 'hold': case 'showBase': case 'showNew': s[a] = el.checked; break;
-    case 'zi': zoom(s, 0.75); break; case 'zo': zoom(s, 1 / 0.75); break; case 'zv': Object.assign(s, t === 2 ? mkV() : { xmin: -PI, span: 6 * PI }); break;
-    case 'reset': S['t' + t] = t === 1 ? mk1() : t === 2 ? mk2() : mk3(); document.querySelectorAll(`[data-t="${t}"][type=checkbox]`).forEach(c => { c.checked = c.dataset.act !== 'hold'; }); document.querySelectorAll(`select[data-t="${t}"]`).forEach(c => { c.value = 1; }); break;
-    case 'famous': S.t1.th = +el.dataset.n * PI / 12; break;
-    case 'shift': S.t1.th += +el.dataset.v * TAU; break;
-    case 'neg': S.t1.th = -S.t1.th; break;
-    case 'choose': Q.sel = el.dataset.k; Q.state = 0; break;
-    case 'check': Q.state = 1; break;
-    case 'reveal': Q.state = 2; S.t1.th = Q.cur.type === 'quad' ? S.t1.th : Q.cur.n * PI / 12; break;
-    case 'next': newQ(); break;
+function explainHtml(st) {
+  const p = st.p, sol = eqSol(p), pred = st.pred ? `<p>あなたの予想：${esc(st.pred)}</p>` : '';
+  if (S.tab === 'eq') {
+    return `<div class="explain"><h3>解説</h3><ol>
+      <li>${tex(FN[p.f])} に注目します。単位円では ${COORD[p.f]}が ${tex(p.v.tex)} になる動径を探します。</li>
+      <li>特殊角の値と対称性から、${tex(rangeTex(p))} で条件を満たす角度を求めます。</li></ol>
+      <div class="ans">${tex('\\theta=' + sol.map(d => d + '^\\circ').join(',\\ '))}</div>${pred}</div>`;
   }
-  sync();
+  const ivs = ineqSol(p), inc = p.op === '>=' || p.op === '<=';
+  const undef = p.f === 'tan' ? '<li>tan θ が定義されない角度は、範囲に含まれません。</li>' : '';
+  return `<div class="explain"><h3>解説</h3><ol>
+    <li>まず境界を求めます。${tex(FN[p.f] + '=' + p.v.tex)} となる角度は ${tex(sol.map(d => d + '^\\circ').join(',\\ '))} です。</li>
+    <li>単位円で、${COORD[p.f]}が ${tex(p.v.tex)} ${SIDE[p.op]}となる動径の範囲を調べます。</li>
+    <li>${tex(OP[p.op])} なので境界は${inc ? '含みます（●）' : '含みません（○）'}。</li>${undef}</ol>
+    <div class="ans">${ivs.map(u => tex(ivTex(u))).join('<br>')}</div>
+    <p><b>方程式との比較：</b>方程式 ${tex(FN[p.f] + '=' + p.v.tex)} は「点（角度）」を求め、不等式は「範囲」を求めます。同じ単位円で、境界の点が方程式の解にあたります。</p>${pred}</div>`;
 }
-document.addEventListener('click', e => { const b = e.target.closest('button[data-act]'); if (b) act(b.dataset.act, +b.dataset.t || 0, b); });
-document.addEventListener('change', e => { const b = e.target.closest('[data-act]'); if (b && b.tagName !== 'BUTTON') act(b.dataset.act, +b.dataset.t || 0, b); });
-document.addEventListener('input', e => {
-  const k = e.target.dataset && e.target.dataset.sl; if (!k) return;
-  const s = S.t3; let v = +e.target.value;
-  if (k === 'b' && v === 0) { v = s.b > 0 ? -0.25 : 0.25; e.target.value = v; }
-  if (k === 'c') s.cn = v; else s[k] = v;
-  outs3();
+const esc = s => s.replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+
+/* ===== 描画 ===== */
+const cv = $('cv'), ctx = cv.getContext('2d');
+const W = 600, CX = 300, CY = 300, R = 210;
+const dpr = window.devicePixelRatio || 1;
+cv.width = cv.height = W * dpr;
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+const BLUE = '#1565c0', GREEN = '#1b7f3b', ORANGE = '#e65100', RED = '#d32f2f';
+const P = (d, r) => [CX + r * Math.cos(rad(d)), CY - r * Math.sin(rad(d))];
+
+function dot(d, r, filled, col) {
+  const [x, y] = P(d, r);
+  ctx.beginPath(); ctx.arc(x, y, 8, 0, 7);
+  ctx.fillStyle = filled ? col : '#fff'; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = col; ctx.stroke();
+}
+function arcPath(a, b, r) { ctx.beginPath(); ctx.arc(CX, CY, r, -rad(a), -rad(b), true); }
+
+function draw() {
+  const st = c(), p = st.p, x = ctx;
+  x.clearRect(0, 0, W, W);
+  const shade = S.tab === 'in' && st.mode !== 'explore';
+  /* 不等式の解（確認・解答モード） */
+  if (shade) {
+    ineqSol(p).forEach(u => {
+      x.beginPath(); x.moveTo(CX, CY); x.arc(CX, CY, R, -rad(u.lo), -rad(u.hi), true); x.closePath();
+      x.fillStyle = 'rgba(21,101,192,.18)'; x.fill();
+      arcPath(u.lo, u.hi, R); x.lineWidth = 8; x.strokeStyle = BLUE; x.stroke();
+      dot(u.lo, R, u.li, BLUE); dot(u.hi, R, u.hiI, BLUE);
+    });
+  }
+  /* 軸・単位円 */
+  x.lineWidth = 1.5; x.strokeStyle = '#7a8591';
+  x.beginPath(); x.moveTo(20, CY); x.lineTo(W - 20, CY); x.moveTo(CX, 20); x.lineTo(CX, W - 20); x.stroke();
+  x.beginPath(); x.arc(CX, CY, R, 0, 7); x.lineWidth = 2; x.strokeStyle = '#37474f'; x.stroke();
+  if (p.f === 'tan') { x.setLineDash([4, 4]); x.strokeStyle = '#8e6bbf'; x.beginPath(); x.moveTo(CX + R, 20); x.lineTo(CX + R, W - 20); x.stroke(); x.setLineDash([]); }
+  /* 目盛りと角度ラベル */
+  x.font = 'bold 13px sans-serif'; x.fillStyle = '#5a6672'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  [0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330].forEach(d => {
+    const [a, b] = P(d, R - 6), [e, f] = P(d, R + 6), [tx, ty] = P(d, R + 38);
+    x.lineWidth = 1.5; x.strokeStyle = '#37474f'; x.beginPath(); x.moveTo(a, b); x.lineTo(e, f); x.stroke();
+    x.fillText(d + '°', tx, ty);
+  });
+  /* 解答ガイド線 */
+  if (st.done && p.f !== 'tan') {
+    x.setLineDash([6, 5]); x.strokeStyle = GREEN; x.lineWidth = 2; x.beginPath();
+    if (p.f === 'sin') { const y = CY - R * p.v.num; x.moveTo(CX - R - 20, y); x.lineTo(CX + R + 20, y); }
+    else { const xx = CX + R * p.v.num; x.moveTo(xx, CY - R - 20); x.lineTo(xx, CY + R + 20); }
+    x.stroke(); x.setLineDash([]);
+  }
+  /* 登録済みの解（方程式） */
+  if (S.tab === 'eq') st.reg.forEach(d => {
+    const [ex, ey] = P(d, R), [lx, ly] = P(d, R * .6);
+    x.lineWidth = 3; x.strokeStyle = GREEN; x.beginPath(); x.moveTo(CX, CY); x.lineTo(ex, ey); x.stroke();
+    dot(d, R, true, GREEN);
+    x.font = 'bold 15px sans-serif'; x.lineWidth = 4; x.strokeStyle = '#fff'; x.strokeText(d + '°', lx, ly); x.fillStyle = GREEN; x.fillText(d + '°', lx, ly);
+  });
+  /* 入力済みの範囲（不等式） */
+  if (S.tab === 'in') st.ranges.forEach(u => {
+    x.setLineDash([8, 5]); arcPath(u.lo, u.hi, R + 16); x.lineWidth = 5; x.strokeStyle = ORANGE; x.stroke(); x.setLineDash([]);
+    dot(u.lo, R + 16, u.li, ORANGE); dot(u.hi, R + 16, u.hiI, ORANGE);
+  });
+  /* 現在の動径 */
+  const a = st.angle, [px, py] = P(a, R), sn = Math.sin(rad(a)), cs = Math.cos(rad(a));
+  x.setLineDash([3, 4]); x.lineWidth = 1.5; x.strokeStyle = '#9aa5b1';
+  x.beginPath(); x.moveTo(px, py); x.lineTo(px, CY); x.moveTo(px, py); x.lineTo(CX, py); x.stroke(); x.setLineDash([]);
+  if (p.f === 'tan' && Math.abs(cs) > 1e-9 && Math.abs(R * sn / cs) < 280) {
+    const ty = CY - R * sn / cs;
+    x.setLineDash([3, 4]); x.strokeStyle = '#8e6bbf'; x.beginPath(); x.moveTo(CX, CY); x.lineTo(CX + R, ty); x.stroke(); x.setLineDash([]);
+    x.beginPath(); x.arc(CX + R, ty, 6, 0, 7); x.fillStyle = '#8e6bbf'; x.fill();
+  }
+  x.beginPath(); x.arc(CX, CY, 34, 0, -rad(a), a > 0); x.lineWidth = 3; x.strokeStyle = RED; x.stroke();
+  x.lineWidth = 5; x.strokeStyle = '#222'; x.beginPath(); x.moveTo(CX, CY); x.lineTo(px, py); x.stroke();
+  x.beginPath(); x.arc(CX, CY, 4, 0, 7); x.fillStyle = '#222'; x.fill();
+  x.beginPath(); x.arc(px, py, 10, 0, 7); x.fillStyle = RED; x.fill(); x.lineWidth = 3; x.strokeStyle = '#fff'; x.stroke();
+}
+
+/* ===== 画面更新 ===== */
+function render() {
+  const st = c(), p = st.p, eq = S.tab === 'eq';
+  $('tabEq').setAttribute('aria-selected', eq); $('tabIn').setAttribute('aria-selected', !eq);
+  $('eqPanel').hidden = !eq; $('inPanel').hidden = eq;
+  $('problem').innerHTML = `<span class="tag">${eq ? '方程式' : '不等式'}（${['基本', '標準', '発展'][p.lv]}）</span><div>${tex(probTex(p))}</div><div>ただし、${tex(rangeTex(p))} とする。</div>`;
+  $('predBox').hidden = !st.locked; $('lock').hidden = !st.locked;
+  $('angleOut').innerHTML = tex(`\\theta=${fmt(st.angle)}^\\circ`);
+  $('vals').innerHTML = ['sin', 'cos', 'tan'].map(f => rowHtml(f, st.angle)).join('');
+  $('status').textContent = '';
+  if (!eq && st.mode !== 'explore') {
+    const d = Math.round(st.angle), ok = sat(p, st.angle);
+    $('status').textContent = ok ? '✔ 今の動径は条件を満たしています' : '✖ 今の動径は条件を満たしていません';
+  }
+  $('regList').innerHTML = st.reg.map(d => `<li><span>${tex(`\\theta=${d}^\\circ`)}　${tex(`${FN[p.f].replace('\\theta', '')}${d}^\\circ=${exact(p.f, d)}`)}</span><button type="button" data-del="${d}" aria-label="${d}°を取り消す">×</button></li>`).join('');
+  $('rangeList').innerHTML = st.ranges.map((u, i) => `<li><span>${tex(ivTex(u))}</span><button type="button" data-delr="${i}" aria-label="範囲を取り消す">×</button></li>`).join('');
+  document.querySelectorAll('input[name=mode]').forEach(r => r.checked = r.value === st.mode);
+  const hs = hints(st);
+  $('hintBtn').textContent = `ヒント（${st.hint}/${hs.length}）`;
+  $('hintBox').innerHTML = hs.slice(0, st.hint).map((h, i) => `<div class="hint"><b>ヒント${i + 1}：</b>${h}</div>`).join('');
+  $('giveBtn').hidden = !(st.checks >= 2 && !st.done);
+  $('explain').innerHTML = st.done ? explainHtml(st) : '';
+  draw();
+}
+
+/* ===== 動径の操作 ===== */
+function setAngle(a) {
+  const st = c();
+  if (S.snap) {
+    const cand = [Math.round(a / 30) * 30, Math.round(a / 45) * 45].sort((m, n) => Math.abs(m - a) - Math.abs(n - a))[0];
+    if (Math.abs(cand - a) < 4) a = cand;
+  }
+  st.angle = a; render();
+}
+let drag = false;
+function move(e) {
+  const r = cv.getBoundingClientRect(), k = W / r.width;
+  const x = (e.clientX - r.left) * k - CX, y = CY - (e.clientY - r.top) * k;
+  if (Math.hypot(x, y) < 5) return;
+  const a = Math.atan2(y, x) * 180 / Math.PI, st = c();
+  const now = ((st.angle % 360) + 360) % 360;
+  const d = ((a - now + 540) % 360) - 180;
+  setAngle(st.angle + d);
+}
+cv.addEventListener('pointerdown', e => { if (c().locked) return; drag = true; cv.setPointerCapture(e.pointerId); move(e); e.preventDefault(); });
+cv.addEventListener('pointermove', e => { if (drag) { move(e); e.preventDefault(); } });
+['pointerup', 'pointercancel'].forEach(t => cv.addEventListener(t, () => { drag = false; }));
+cv.addEventListener('keydown', e => {
+  if (c().locked) return;
+  const k = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[e.key];
+  if (!k) return;
+  e.preventDefault(); c().angle = Math.round(c().angle) + k * (e.shiftKey ? 15 : 1); render();
+});
+document.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+  if (c().locked) return; c().angle = Math.round(c().angle) + +b.dataset.step; render();
+}));
+$('snap').addEventListener('change', e => { S.snap = e.target.checked; });
+
+/* ===== 方程式：登録・答え合わせ ===== */
+$('regBtn').addEventListener('click', () => {
+  const st = c(), p = st.p, d = Math.round(st.angle);
+  if (st.locked) return msg('先に予想を確定しよう。', 'info');
+  if (d < p.lo || d >= p.hi) return msg(`範囲外です。${tex(rangeTex(p))} の中で探そう。`, 'bad');
+  if (st.reg.includes(d)) return msg(`${d}° はすでに登録しています。`, 'info');
+  if (!sat({ ...p, op: '=' }, d)) {
+    const e = exact(p.f, d), lhs = `${FN[p.f].replace('\\theta', '')}${d}^\\circ`;
+    const rhs = e === 'undef' ? '定義されない' : e !== null ? tex(lhs + '=' + e) : tex(lhs + '\\approx ' + fval(p.f, d).toFixed(3));
+    return msg(`${d}° のとき ${e === 'undef' ? tex(lhs) + ' は定義されません。' : rhs + ' で、' + tex(p.v.tex) + ' になりません。'}`, 'bad');
+  }
+  st.reg.push(d); st.reg.sort((m, n) => m - n); msg(`${d}° を登録しました。`, 'ok'); render();
+});
+$('regList').addEventListener('click', e => {
+  const d = e.target.dataset.del; if (d === undefined) return;
+  const st = c(); st.reg = st.reg.filter(v => v !== +d); msg(''); render();
 });
 
-/* 単位円のドラッグ（何周でも・マウスとタッチ） */
-function fromPtr(t, e) {
-  const s = FN(t), g = circ(t), r = g.cv.getBoundingClientRect(), x = e.clientX - r.left - r.width / 2, y = r.height / 2 - (e.clientY - r.top);
-  if (!x && !y) return;
-  let d = Math.atan2(y, x) - mod(s.th, TAU); d = mod(d + PI, TAU) - PI; s.th += d;
-  if (s.snap) s.th = snapAng(s.th);
-  if (t > 1) moved(t);
-}
-[[1, 'c1'], [2, 'c2c'], [3, 'c3c']].forEach(([t, id]) => {
-  const cv = $(id);
-  cv.onpointerdown = e => { drag = t; cv.setPointerCapture(e.pointerId); fromPtr(t, e); };
-  cv.onpointermove = e => { if (drag === t) fromPtr(t, e); };
-  cv.onpointerup = cv.onpointercancel = () => { drag = 0; };
+/* ===== 不等式：範囲の入力 ===== */
+$('setLo').addEventListener('click', () => { $('lo').value = Math.round(c().angle); });
+$('setHi').addEventListener('click', () => { $('hi').value = Math.round(c().angle); });
+$('addRange').addEventListener('click', () => {
+  const st = c(), p = st.p, lo = parseFloat($('lo').value), hi = parseFloat($('hi').value);
+  const li = $('loOp').value === 'le', hiI = $('hiOp').value === 'le';
+  if (st.locked) return msg('先に予想を確定しよう。', 'info');
+  if (!isFinite(lo) || !isFinite(hi)) return msg('下限と上限の角度を入力しよう。', 'info');
+  if (lo >= hi) return msg('下限は上限より小さくなるようにしよう。', 'bad');
+  if (lo < p.lo || hi > p.hi || (hiI && hi >= p.hi)) return msg(`範囲外です。${tex(rangeTex(p))} の中で答えよう。`, 'bad');
+  if (st.ranges.some(u => u.lo === lo && u.hi === hi && u.li === li && u.hiI === hiI)) return msg('同じ範囲がすでにあります。', 'info');
+  st.ranges.push({ lo, hi, li, hiI }); st.ranges.sort((m, n) => m.lo - n.lo); msg('範囲を登録しました。', 'ok'); render();
 });
-[[2, 'c2g'], [3, 'c3g']].forEach(([t, id]) => {
-  const cv = $(id), s = FN; let px = null;
-  cv.onpointerdown = e => { px = e.clientX; cv.setPointerCapture(e.pointerId); };
-  cv.onpointermove = e => { if (px !== null) { const q = s(t); q.xmin -= (e.clientX - px) * q.span / G[id].w; px = e.clientX; } };
-  cv.onpointerup = cv.onpointercancel = () => { px = null; };
-  cv.addEventListener('wheel', e => { e.preventDefault(); zoom(s(t), e.deltaY > 0 ? 1.12 : 1 / 1.12, (e.clientX - cv.getBoundingClientRect().left) / G[id].w); }, { passive: false });
+$('rangeList').addEventListener('click', e => {
+  const i = e.target.dataset.delr; if (i === undefined) return;
+  c().ranges.splice(+i, 1); msg(''); render();
+});
+document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => {
+  const st = c();
+  if (r.value === 'answer' && !st.done) {
+    if (!confirm('答えを表示します。自分で考えてからにしましょう。表示してよいですか？')) { render(); return; }
+    st.done = true;
+  }
+  st.mode = r.value; msg(''); render();
+}));
+
+/* ===== 共通ボタン ===== */
+$('checkBtn').addEventListener('click', () => {
+  const st = c(), p = st.p;
+  if (st.locked) return msg('先に予想を確定しよう。', 'info');
+  st.checks++;
+  if (S.tab === 'eq') {
+    if (!st.reg.length) { msg('まず、条件を満たす角度を登録しよう。', 'info'); }
+    else if (eqSol(p).every(d => st.reg.includes(d))) { st.done = true; msg('正解です。解説を確認しよう。', 'ok'); }
+    else msg('ほかにも条件を満たす角度がないか確認しよう。', 'info');
+  } else {
+    const sol = ineqSol(p), u = st.ranges;
+    const same = (a, b) => a.lo === b.lo && a.hi === b.hi && a.li === b.li && a.hiI === b.hiI;
+    if (!u.length) msg('まず、答えの範囲を登録しよう。', 'info');
+    else if (u.length === sol.length && sol.every(s => u.some(t => same(s, t)))) { st.done = true; st.mode = 'answer'; msg('正解です。解説を確認しよう。', 'ok'); }
+    else if (sol.some(s => u.some(t => t.lo === s.lo && t.hi === s.hi))) msg('境界の角度を含むか含まないか（≦と＜の違い）を確認しよう。', 'bad');
+    else if (u.length < sol.length) msg('ほかにも条件を満たす範囲がないか確認しよう。', 'info');
+    else msg('範囲の端の角度をもう一度確認しよう。', 'bad');
+  }
+  render();
+});
+$('giveBtn').addEventListener('click', () => {
+  const st = c(); st.done = true;
+  if (S.tab === 'eq') st.reg = eqSol(st.p); else { st.mode = 'answer'; st.ranges = []; }
+  msg('解説を表示しました。次の問題にも挑戦しよう。', 'info'); render();
+});
+$('hintBtn').addEventListener('click', () => {
+  const st = c(); if (st.locked) return msg('先に予想を確定しよう。', 'info');
+  const n = hints(st).length; if (st.hint < n) st.hint++; else msg('ヒントはここまでです。', 'info'); render();
+});
+$('resetBtn').addEventListener('click', () => { S.st[S.tab] = { ...newState(S.tab), p: c().p }; msg(''); render(); });
+$('newBtn').addEventListener('click', () => { S.st[S.tab] = newState(S.tab, c().p); msg(''); render(); });
+$('predOk').addEventListener('click', () => {
+  const st = c(), v = $('predIn').value.trim();
+  if (!v) return msg('予想を入力するか、「予想せずに始める」を押そう。', 'info');
+  st.pred = v; st.locked = false; $('predIn').value = ''; msg('予想を確定しました。動径を動かして確かめよう。', 'ok'); render();
+});
+$('predSkip').addEventListener('click', () => { c().locked = false; $('predIn').value = ''; msg(''); render(); });
+function switchTab(t) { S.tab = t; msg(''); render(); }
+$('tabEq').addEventListener('click', () => switchTab('eq'));
+$('tabIn').addEventListener('click', () => switchTab('in'));
+$('lv').addEventListener('change', e => {
+  S.lv = +e.target.value; S.st.eq = newState('eq'); S.st.in = newState('in'); msg(''); render();
 });
 
-/* ---------- メインループ ---------- */
-let last = 0;
-function loop(now) {
-  const dt = Math.min((now - last) / 1000, 0.1); last = now;
-  try {
-    const t = S.tab;
-    if (t > 1) { const s = FN(t); if (s.play && !drag) { s.th += s.speed * dt; moved(t); } }
-    if (t === 1) drawCircle(1, 'all', S.t1.th, { labels: true });
-    else { const s = FN(t); drawCircle(t, s.fn, s.th, { link: true }); drawGraph(t); }
-    drawInfo();
-  } catch (err) { console.error(err); }
-  requestAnimationFrame(loop);
+/* ===== 操作ガイド ===== */
+function showGuide(on) {
+  $('modal').hidden = !on;
+  if (!on) { try { localStorage.setItem('trigEqGuideSeen', '1'); } catch (e) { /* 保存できなくても動作する */ } $('guideBtn').focus(); }
+  else $('closeGuide').focus();
 }
-newQ(); sync();
-requestAnimationFrame(loop);
+$('guideBtn').addEventListener('click', () => showGuide(true));
+$('closeGuide').addEventListener('click', () => showGuide(false));
+$('modal').addEventListener('click', e => { if (e.target === $('modal')) showGuide(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modal').hidden) showGuide(false); });
+
+/* ===== 起動 ===== */
+S.st.eq = newState('eq'); S.st.in = newState('in');
+render();
+try { if (!localStorage.getItem('trigEqGuideSeen')) showGuide(true); } catch (e) { /* 初回表示のみ省略 */ }

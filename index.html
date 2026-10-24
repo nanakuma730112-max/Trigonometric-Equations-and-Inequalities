@@ -3,100 +3,122 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>三角関数のグラフ学習アプリ</title>
+<title>三角関数の方程式・不等式を学ぼう</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
-  <h1>三角関数のグラフ</h1>
-  <nav class="grp" aria-label="タブ">
-    <button data-act="tab" data-t="1" class="on">① 三角関数の値を復習</button>
-    <button data-act="tab" data-t="2">② 基本グラフを作る</button>
-    <button data-act="tab" data-t="3">③ グラフの変化を調べる</button>
-  </nav>
-  <div class="grp" aria-label="角の単位">
-    <button data-act="unit" data-v="deg">度数法</button>
-    <button data-act="unit" data-v="rad" class="on">弧度法</button>
+  <h1>三角関数の方程式・不等式を学ぼう</h1>
+  <div class="tools">
+    <label>難易度
+      <select id="lv">
+        <option value="0">基本</option>
+        <option value="1">標準</option>
+        <option value="2">発展</option>
+      </select>
+    </label>
+    <button id="guideBtn" type="button">操作ガイド</button>
   </div>
 </header>
 
+<nav class="tabs" role="tablist">
+  <button id="tabEq" role="tab" type="button" aria-selected="true">① 三角関数の方程式</button>
+  <button id="tabIn" role="tab" type="button" aria-selected="false">② 三角関数の不等式</button>
+</nav>
+
 <main>
-  <!-- ① 復習 -->
-  <section class="pane on" id="p1">
-    <details class="guide" open>
-      <summary>操作ガイド</summary>
-      <ol>
-        <li>単位円の点をドラッグするか、有名角ボタンを押して、動径を動かす。</li>
-        <li>点Pの座標と sin・cos・tan の値を確認する。</li>
-        <li>下の問題を読み、答えを選んで「答え合わせ」を押す。考えてから「答えと解説」を見よう。</li>
-      </ol>
-    </details>
-    <div class="stage1">
-      <div class="box"><canvas id="c1"></canvas></div>
-      <div class="side">
-        <div id="i1" class="info"></div>
-        <div id="fam" class="fam"></div>
-        <label class="chk"><input type="checkbox" data-act="snap" data-t="1" checked>有名角にスナップ</label>
-        <div class="quiz">
-          <div id="qq" class="qq"></div>
-          <div id="qc" class="choices"></div>
-          <div class="row">
-            <button data-act="check">答え合わせ</button>
-            <button data-act="reveal">答えと解説を見る</button>
-            <button data-act="next">次の問題</button>
-          </div>
-          <div id="qr" class="qr"></div>
-        </div>
-      </div>
+  <section id="problem" class="card area-problem" aria-live="polite"></section>
+
+  <section id="predBox" class="card area-pred">
+    <p><strong>まず予想しよう。</strong>どんな角度（範囲）になりそうか、考えてから入力します。</p>
+    <div class="row">
+      <input id="predIn" type="text" placeholder="例：30°くらい？ 2つありそう？" aria-label="予想">
+      <button id="predOk" type="button" class="primary">予想を確定して操作開始</button>
+      <button id="predSkip" type="button" class="link">予想せずに始める</button>
     </div>
   </section>
 
-  <!-- ② 基本グラフ -->
-  <section class="pane" id="p2">
-    <details class="guide" open>
-      <summary>操作ガイド</summary>
-      <p class="lead">単位円の点を動かして、三角関数のグラフを作ってみよう！</p>
-      <ol>
-        <li>円周上の点をドラッグする。</li>
-        <li>点の角度と三角関数の値を確認する。</li>
-        <li>点を動かすと、グラフが描かれる。</li>
-        <li>1周以上動かして、グラフの繰り返しを観察する。</li>
-      </ol>
-    </details>
-    <div class="bar" data-bar="2"></div>
-    <div class="stage">
-      <div class="box circ"><canvas id="c2c"></canvas></div>
-      <div class="box graph"><canvas id="c2g"></canvas></div>
-    </div>
-    <div class="panel"><div id="i2" class="info"></div></div>
-  </section>
+  <div class="cvwrap area-cv">
+    <canvas id="cv" tabindex="0" aria-label="単位円。ドラッグして動径を動かします。矢印キーでも操作できます。"></canvas>
+    <div id="lock" hidden>予想を確定すると<br>動径を操作できます</div>
+  </div>
 
-  <!-- ③ グラフの変化 -->
-  <section class="pane" id="p3">
-    <details class="guide">
-      <summary>操作ガイド</summary>
-      <ol>
-        <li>薄い破線が変化前 y = f(θ)、濃い実線が変化後のグラフ。</li>
-        <li>下の4つのスライダーを動かして、グラフがどう変わるか調べる。</li>
-        <li>周期を変えると、山から次の山までの距離（矢印）が変わる。</li>
-      </ol>
-    </details>
-    <div class="bar" data-bar="3"></div>
-    <div class="stage">
-      <div class="box circ"><canvas id="c3c"></canvas></div>
-      <div class="box graph"><canvas id="c3g"></canvas></div>
-    </div>
-    <div class="panel">
-      <div id="i3" class="info"></div>
-      <div class="sliders">
-        <div class="sl"><label for="sa" id="la"></label><input id="sa" type="range" data-sl="a" min="-3" max="3" step="0.25" value="1"><p id="ha"></p></div>
-        <div class="sl"><label for="sb" id="lb"></label><input id="sb" type="range" data-sl="b" min="-4" max="4" step="0.25" value="1"><p>b が大きいほど周期は短くなる（負なら左右反転）。</p></div>
-        <div class="sl"><label for="sc" id="lc"></label><input id="sc" type="range" data-sl="c" min="-24" max="24" step="1" value="0"><p>c &gt; 0 で右へ、c &lt; 0 で左へ動く（θ − c）。</p></div>
-        <div class="sl"><label for="sd" id="ld"></label><input id="sd" type="range" data-sl="d" min="-3" max="3" step="0.25" value="0"><p>d &gt; 0 で上へ、d &lt; 0 で下へ動く。</p></div>
+  <aside class="area-side">
+    <div class="card" id="readout">
+      <div id="angleOut" class="angle"></div>
+      <div id="vals"></div>
+      <div id="status"></div>
+      <div class="row steps">
+        <button type="button" data-step="-15">−15°</button>
+        <button type="button" data-step="-1">−1°</button>
+        <button type="button" data-step="1">＋1°</button>
+        <button type="button" data-step="15">＋15°</button>
       </div>
+      <label class="chk"><input type="checkbox" id="snap" checked> 特殊角に吸着する</label>
     </div>
-  </section>
+
+    <div class="card" id="eqPanel">
+      <h2>解の登録</h2>
+      <button id="regBtn" type="button" class="primary">この角度を解として登録する</button>
+      <ul id="regList" class="list"></ul>
+    </div>
+
+    <div class="card" id="inPanel" hidden>
+      <h2>モード</h2>
+      <div class="row modes" role="radiogroup" aria-label="モード">
+        <label><input type="radio" name="mode" value="explore" checked> 探索</label>
+        <label><input type="radio" name="mode" value="confirm"> 確認</label>
+        <label><input type="radio" name="mode" value="answer"> 解答</label>
+      </div>
+      <h2>答えの範囲を入力</h2>
+      <div class="row range">
+        <input id="lo" type="number" step="1" aria-label="下限の角度">°
+        <select id="loOp" aria-label="下限の不等号"><option value="le">≦</option><option value="lt">＜</option></select>
+        <span class="th">θ</span>
+        <select id="hiOp" aria-label="上限の不等号"><option value="le">≦</option><option value="lt">＜</option></select>
+        <input id="hi" type="number" step="1" aria-label="上限の角度">°
+      </div>
+      <div class="row">
+        <button id="setLo" type="button">現在の角度を下限に</button>
+        <button id="setHi" type="button">現在の角度を上限に</button>
+      </div>
+      <button id="addRange" type="button" class="primary">この範囲を登録する</button>
+      <ul id="rangeList" class="list"></ul>
+    </div>
+
+    <div class="card actions">
+      <button id="hintBtn" type="button">ヒント</button>
+      <button id="checkBtn" type="button" class="primary">答え合わせ</button>
+      <button id="giveBtn" type="button" hidden>解説を見る</button>
+      <button id="newBtn" type="button">次の問題</button>
+      <button id="resetBtn" type="button">最初からやり直す</button>
+    </div>
+
+    <div id="msg" class="msg" role="status" aria-live="polite"></div>
+    <div id="hintBox"></div>
+    <div id="explain"></div>
+  </aside>
 </main>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-body" role="dialog" aria-modal="true" aria-labelledby="gTitle">
+    <h2 id="gTitle">操作ガイド</h2>
+    <ol>
+      <li><b>動径の動かし方：</b>単位円の上をドラッグ（タッチ）します。「＋1°」などのボタンや矢印キーでも動かせます。</li>
+      <li><b>角度の読み取り方：</b>反時計回りが正の向きです。現在の角度は「θ＝…°」に表示されます。</li>
+      <li><b>値の確認：</b>sin・cos・tan の値が、角度に合わせてすぐに更新されます。</li>
+      <li><b>解の登録（方程式）：</b>条件を満たす角度で「解として登録する」を押します。</li>
+      <li><b>範囲の登録（不等式）：</b>下限・上限を入力（または現在の角度を設定）して「登録する」を押します。</li>
+      <li><b>ヒント：</b>押すたびに少しずつヒントが増えます。</li>
+      <li><b>答え合わせ：</b>登録したものが正しいか確認します。</li>
+      <li><b>やり直し：</b>「最初からやり直す」で、この問題を初期状態に戻します。</li>
+    </ol>
+    <button id="closeGuide" type="button" class="primary">閉じる</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
