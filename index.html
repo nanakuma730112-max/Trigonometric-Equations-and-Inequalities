@@ -1,1 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三角関数のグラフ学習アプリ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>三角関数のグラフ</h1>
+  <nav class="grp" aria-label="タブ">
+    <button data-act="tab" data-t="1" class="on">① 三角関数の値を復習</button>
+    <button data-act="tab" data-t="2">② 基本グラフを作る</button>
+    <button data-act="tab" data-t="3">③ グラフの変化を調べる</button>
+  </nav>
+  <div class="grp" aria-label="角の単位">
+    <button data-act="unit" data-v="deg">度数法</button>
+    <button data-act="unit" data-v="rad" class="on">弧度法</button>
+  </div>
+</header>
 
+<main>
+  <!-- ① 復習 -->
+  <section class="pane on" id="p1">
+    <details class="guide" open>
+      <summary>操作ガイド</summary>
+      <ol>
+        <li>単位円の点をドラッグするか、有名角ボタンを押して、動径を動かす。</li>
+        <li>点Pの座標と sin・cos・tan の値を確認する。</li>
+        <li>下の問題を読み、答えを選んで「答え合わせ」を押す。考えてから「答えと解説」を見よう。</li>
+      </ol>
+    </details>
+    <div class="stage1">
+      <div class="box"><canvas id="c1"></canvas></div>
+      <div class="side">
+        <div id="i1" class="info"></div>
+        <div id="fam" class="fam"></div>
+        <label class="chk"><input type="checkbox" data-act="snap" data-t="1" checked>有名角にスナップ</label>
+        <div class="quiz">
+          <div id="qq" class="qq"></div>
+          <div id="qc" class="choices"></div>
+          <div class="row">
+            <button data-act="check">答え合わせ</button>
+            <button data-act="reveal">答えと解説を見る</button>
+            <button data-act="next">次の問題</button>
+          </div>
+          <div id="qr" class="qr"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ② 基本グラフ -->
+  <section class="pane" id="p2">
+    <details class="guide" open>
+      <summary>操作ガイド</summary>
+      <p class="lead">単位円の点を動かして、三角関数のグラフを作ってみよう！</p>
+      <ol>
+        <li>円周上の点をドラッグする。</li>
+        <li>点の角度と三角関数の値を確認する。</li>
+        <li>点を動かすと、グラフが描かれる。</li>
+        <li>1周以上動かして、グラフの繰り返しを観察する。</li>
+      </ol>
+    </details>
+    <div class="bar" data-bar="2"></div>
+    <div class="stage">
+      <div class="box circ"><canvas id="c2c"></canvas></div>
+      <div class="box graph"><canvas id="c2g"></canvas></div>
+    </div>
+    <div class="panel"><div id="i2" class="info"></div></div>
+  </section>
+
+  <!-- ③ グラフの変化 -->
+  <section class="pane" id="p3">
+    <details class="guide">
+      <summary>操作ガイド</summary>
+      <ol>
+        <li>薄い破線が変化前 y = f(θ)、濃い実線が変化後のグラフ。</li>
+        <li>下の4つのスライダーを動かして、グラフがどう変わるか調べる。</li>
+        <li>周期を変えると、山から次の山までの距離（矢印）が変わる。</li>
+      </ol>
+    </details>
+    <div class="bar" data-bar="3"></div>
+    <div class="stage">
+      <div class="box circ"><canvas id="c3c"></canvas></div>
+      <div class="box graph"><canvas id="c3g"></canvas></div>
+    </div>
+    <div class="panel">
+      <div id="i3" class="info"></div>
+      <div class="sliders">
+        <div class="sl"><label for="sa" id="la"></label><input id="sa" type="range" data-sl="a" min="-3" max="3" step="0.25" value="1"><p id="ha"></p></div>
+        <div class="sl"><label for="sb" id="lb"></label><input id="sb" type="range" data-sl="b" min="-4" max="4" step="0.25" value="1"><p>b が大きいほど周期は短くなる（負なら左右反転）。</p></div>
+        <div class="sl"><label for="sc" id="lc"></label><input id="sc" type="range" data-sl="c" min="-24" max="24" step="1" value="0"><p>c &gt; 0 で右へ、c &lt; 0 で左へ動く（θ − c）。</p></div>
+        <div class="sl"><label for="sd" id="ld"></label><input id="sd" type="range" data-sl="d" min="-3" max="3" step="0.25" value="0"><p>d &gt; 0 で上へ、d &lt; 0 で下へ動く。</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="script.js"></script>
+</body>
+</html>
